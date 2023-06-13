@@ -1,0 +1,351 @@
+---
+title: "EM explanation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{EM explanation}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(EpiEstim) 
+library(ggplot2)
+library(hrbrthemes)
+library(scales)
+library(epitrix)
+library(distcrete)
+```
+
+We use a simple EM algorithm approach to reconstruct daily incidence data from
+temporally aggregated data, without introducing bias into R~t~ estimates.
+This vignette provides a short breakdown of how the algorithm works "under the
+hood" (code is all within the `estimate_R()` function in EpiEstim), but
+to see a vignette for how the algorithm is applied in EpiEstim, visit: <br />
+https://mrc-ide.github.io/EpiEstim/articles/EpiEstim_aggregated_data.html. <br />
+The function `estimate_R_agg()` which implements the process below within
+`estimate_R()` can be found here: <br />
+https://github.com/mrc-ide/EpiEstim/blob/master/R/estimate_R_agg.R
+
+Here, we will use weekly data to demonstrate the steps of the EM algorithm (as
+shown in Figure 1), but the approach can be applied to any aggregation of 
+incidence data.
+
+```{r}
+# Fake aggregated incidence
+weekly_inc <- readRDS("weekly_dat.rds")
+
+# Serial interval
+method <- "parametric_si"
+mean_si <- 3.6
+sd_si <- 1.6
+
+# Default number of iterations used
+iter <- 10
+```
+
+## Step 1: Initiation
+
+The EM algorithm is initialised with a naive disaggregation of the incidence:
+
+```{r, results = 'hide'}
+dt <- 7 # Aggregation window
+dis <- weekly_inc / dt # Naive disaggregation
+
+dis_inc <- rep(dis, each = dt)
+day <- seq_along(dis_inc)
+dis_data <- data.frame(dis_inc, day)
+```
+
+```{r, echo = F, warning = F, fig.align = "center", fig.width = 5, fig.cap = "Fig.1. Naive reconstruction of daily incidence"}
+dis_plot <- ggplot(dis_data, aes(x = day, y = dis_inc)) +
+  geom_line(col="dodgerblue") +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  xlab("Day")+
+  ylab("Naive incidence")+
+  hrbrthemes::theme_ipsum()+
+  theme(
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20),
+    axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0),
+                                size=12, hjust=0.5),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0),
+                                size=12, hjust=0.5),
+    axis.text.x = element_text(size=10),
+    axis.text.y = element_text(size=10),
+    panel.grid.minor = element_blank(),                     
+    panel.grid.major = element_blank(),
+    axis.line = element_line(color="lightgrey", linewidth = 0.3),
+    axis.ticks.x = element_blank())
+dis_plot
+```
+
+## Step 2: Expectation
+
+The current reconstructed daily incidence (in the first iteration this is the
+naive incidence) is then used to estimate the expected reproduction number for 
+each aggregation window R~w~, obtained as the posterior mean from EpiEstim.
+
+```{r}
+n_dt <- length(weekly_inc) # number of aggregation windows
+T <- n_dt * dt
+t_start <- seq(from = dt + 1, to = T - (dt - 1), dt)
+t_end <- seq(from = min(t_start) + (dt - 1), to = T, dt)
+result_R_w <- estimate_R(dis_inc,
+                  method = method,
+                  config = list(mean_si = mean_si,
+                                std_si = sd_si,
+                                t_start = t_start,
+                                t_end = t_end))
+r_w <- rep(result_R_w$R$`Mean(R)`, each = dt)
+r_w_day <- day[-c(1:7)] # can't estimate R for first aggregation window
+dat_r_w <- data.frame(r_w, r_w_day)
+```
+
+```{r, echo = F, warning = F, fig.align = "center", fig.width = 5, fig.cap = "Fig.2. R~w~ estimates for the first iteration"}
+exp_plot <- ggplot(dat_r_w, aes(x = r_w_day, y = r_w)) +
+  geom_line(col = "navy") +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  xlab("Day") +
+  ylab("Weekly Rt estimates") +
+  hrbrthemes::theme_ipsum() +
+  theme(
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20),
+    axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0),
+                                size=12, hjust=0.5),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0),
+                                size=12, hjust=0.5),
+    axis.text.x = element_text(size=10),
+    axis.text.y = element_text(size=10),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    axis.line = element_line(color = "lightgrey", linewidth = 0.3),
+    axis.ticks.x=element_blank())
+exp_plot
+```
+
+## Step 3: Maximisation
+
+Conditional on R~w~ the most likely daily incidence is reconstructed.
+
+First, R~w~ is translated into a growth rate for that week (r~w~) using 
+Wallinga and Lipsitch's method^1^. This is implemented using a function called
+`get_r_from_R()`:
+
+```{r, echo = F}
+get_r_from_R <- function(R,
+                         gt_mean,
+                         gt_sd,
+                         gt_distr = NULL,
+                         grid = list(precision = 0.001, min = -1, max = 1)) {
+        r_grid <- seq(grid$min, grid$max, grid$precision)
+        if (is.null(gt_distr)) {
+          gt_pars <- epitrix::gamma_mucv2shapescale(mu = gt_mean, 
+                                                    cv = gt_sd / gt_mean)
+          gt_distr <- distcrete::distcrete("gamma", interval = 1,
+                                           shape = gt_pars$shape,
+                                           scale = gt_pars$scale, w = 0.5)
+        }
+        # using a grid of r values translate that into R using r2R0
+        R_grid <- epitrix::r2R0(r = r_grid, w = gt_distr)
+        # find location of the value in the R grid which has the smallest 
+        # difference to the input of R the user provided e.g. R_grid[idx_r]:
+        idx_r <- vapply(R, function(e) which.min(abs(R_grid - e)), numeric(1L)) 
+        while (any(idx_r == 1) || any(idx_r == length(r_grid))) {
+          # if necessary rerun get_r_from_R with a wider r_grid
+          grid_multiplier <- 5
+          if (grid$max > 0) grid$max <- grid_multiplier * grid$max else 
+            grid$max <- - grid$max
+          if (grid$min < 0) grid$min <- grid_multiplier * grid$min else 
+            grid$min <- - grid$min
+          r_grid <- seq(grid$min, grid$max, grid$precision)
+          R_grid <- r2R0(r = r_grid, w = gt_distr)
+          idx_r <- vapply(R, function(e) which.min(abs(R_grid - e)), numeric(1L))
+        }
+        r <- vapply(idx_r, function(e) r_grid[e], numeric(1L))
+      }
+```
+
+```{r}
+Mean_R <- result_R_w$R$`Mean(R)`
+gr <- get_r_from_R(R = Mean_R,
+                   gt_mean = mean_si,
+                   gt_sd = sd_si)
+```
+
+The incidence for each week is then computed assuming exponential growth, with
+a multiplying constant k~w~ that ensures that, if incidence were to be 
+reaggregated, the reconstructed incidence will still match the original weekly
+incidence supplied. 
+
+One caveat to this method, is that it does not allow incidence to be
+reconstructed for the first aggregation window, as there is no past incidence
+data to estimate R~w~ for it. This could be further pushed back if incidence is
+too low to estimate R~w~ beyond the first aggregation window. The user can
+choose to either: <br />
+
+1) keep the naive disaggregation of the the incidence for the aggregation 
+window(s) which precede the first window that R can be estimated for, or <br />
+
+2) reconstruct the incidence in the preceding aggregation window by assuming
+the growth rate matches that of the first estimation window. Here, we will
+assume that the user chose option 2 (which would be specified in EpiEstim using
+`recon_opt = "match"` in `estimate_R()`).
+
+```{r}
+# Note: this is all encoded within estimate_R_agg(), which is called by estimate_R()
+
+# Matrix for the reconstructed incidence generated after each iteration
+sim_inc <- matrix(NA, nrow = T, ncol = iter)
+
+# Identify which aggregation windows R could be estimated for
+# (in this case all but the first)
+ if (anyNA(Mean_R)){
+   idx_na <- which(is.na(Mean_R))
+   idx_reconstruct <- seq(min(result_R_w$R$t_start[-idx_na]), length(dis_inc))
+   Mean_R <- Mean_R[!is.na(Mean_R)]
+   } else {
+     idx_reconstruct <- seq(min(result_R_w$R$t_start), length(dis_inc))
+   }
+
+# Index for aggregation windows
+full_dt <- rep(dt, n_dt)
+idx_aggregation <- rep(seq(1 : n_dt), times = full_dt)
+
+# If recon_opt = "match" in estimate_R()
+aggs_with_estimate <- seq(idx_aggregation[idx_reconstruct[1]], n_dt)
+aggs_to_reconstruct <- c(aggs_with_estimate[1] - 1, aggs_with_estimate)
+add_idx <- rev((min(idx_reconstruct) - 1) : (min(idx_reconstruct) - dt))
+idx_reconstruct <- c(add_idx, idx_reconstruct)
+# assuming growth rate in first week matches the first estimation window
+gr <- c(gr[1], gr)
+
+# Aggregated incidence that can be reconstructed (in this case all incidence)
+incid_to_reconstruct <- weekly_inc[aggs_to_reconstruct]
+dt_seq <- full_dt[aggs_to_reconstruct]
+
+# Constant kw ensures that, if re-aggregated, totals match original aggregations
+d <- numeric(length(aggs_to_reconstruct))
+k <- numeric(length(aggs_to_reconstruct))
+for (w in seq_along(k)){
+  d[w] <- sum(exp(gr[w] * seq(1, dt_seq[w] - 1, 1)))
+  k[w] <- incid_to_reconstruct[w] / (exp(gr[w]) * (1 + d[w]))
+}
+
+recon_df <- data.frame(k = k, gr = gr, dt = dt_seq)
+
+# Create sequences of k and gr matching the length of each dt
+k_ls <- list()
+gr_ls <- list()
+for (f in seq_along(incid_to_reconstruct)){
+  k_ls[[f]] <- rep(recon_df$k[f], recon_df$dt[f])
+  gr_ls[[f]] <- rep(recon_df$gr[f], recon_df$dt[f])
+}
+k_seq <- unlist(k_ls)
+gr_seq <- unlist(gr_ls)
+
+# Create aggregation day index
+w_day <- list()
+for (x in seq_along(dt_seq)){
+  w_day[[x]] <- seq(1, dt_seq[x])
+}
+w_day <- unlist(w_day)
+
+# Reconstruct daily incidence
+recon_days <- seq(1, sum(dt_seq))
+est_inc <- rep(NA, length(recon_days))
+
+for (t in seq_along(recon_days)){
+  est_inc[t] <- k_seq[t] * exp(gr_seq[t] * w_day[t])
+}
+
+sim_inc[,1] <- est_inc
+message("Reconstructed incidence for iteration: ", 1)
+
+```
+
+The process is repeated iteratively, where each iteration starts with the new 
+reconstructed incidence generated in the previous iteration:
+
+```{r}
+new_inc <- sim_inc[,1]
+
+# Re-estimate R for each aggregation window using this new incidence
+R <- estimate_R(new_inc,
+                method = method,
+                config = list(mean_si = mean_si,
+                              std_si = sd_si,
+                              t_start = t_start,
+                              t_end = t_end))
+
+# And the process repeats exactly as above until convergence
+```
+
+```{r, echo = F, message = F}
+source("functions.R")
+sim_inc <- recon_inc_matrix(incid = weekly_inc,
+                            method = method,
+                            recon_opt = "match",
+                            config = list(mean_si = mean_si,
+                                          std_si = sd_si,
+                                          t_start = t_start,
+                                          t_end = t_end))
+inc_final_iter <- sim_inc[,10]
+recon_inc_dat <- data.frame(day, inc_final_iter)
+```
+
+After 10 iterations, the matrix of reconstructed incidence is complete:
+
+```{r}
+head(sim_inc)
+```
+A convergence check ensures that the incidence generated in the final iteration 
+does not differ from the previous iteration beyond a tolerance of 10^-6^.
+
+<div style="margin-top:30px;">
+```{r, echo = F, warning = F, fig.align = "center", fig.width = 5, fig.cap = "Fig.3. Reconstructed incidence after 10 iterations (blue) compared to the naively disaggregated incidence (grey)"}
+recon_plot <- ggplot(recon_inc_dat, aes(x = day, y = inc_final_iter)) +
+  geom_line(data = dis_data, aes(y = dis_inc), colour = "grey") +
+  geom_line(colour = "dodgerblue") +
+  scale_x_continuous(breaks = scales::pretty_breaks()) +
+  hrbrthemes::theme_ipsum()+
+  theme(
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20),
+    axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0), 
+                                size=12, hjust=0.5),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0), 
+                                size=12, hjust=0.5),
+    axis.text.x = element_text(size=10),
+    axis.text.y = element_text(size=10),
+    panel.grid.minor = element_blank(),                       
+    panel.grid.major = element_blank(),
+    axis.line = element_line(color="lightgrey", linewidth = 0.3),
+    axis.ticks.x=element_blank()) +
+  ylab("Reconstructed incidence") +
+  xlab("Day")
+recon_plot
+```
+
+<div style="margin-top:30px;">
+Finally, the algorithm takes the latest reconstructed incidence and estimates
+the full posterior distribution of R~t~ using EpiEstim.
+
+<div style="margin-top:30px;">
+```{r, echo = F, warning = F, message = F, fig.width = 5, fig.align = "center", fig.cap = "Fig.4. R estimate using the final daily reconstructed incidence"}
+final_R <- estimate_R(incid = inc_final_iter,
+                      method = method,
+                      config = list(mean_si = mean_si,
+                                    std_si = sd_si))
+
+plot(final_R, "R")
+```
+
+## References
+
+1. Wallinga J, Lipsitch M. How generation intervals shape the relationship
+between growth rates and reproductive numbers. Proc Biol Sci. 2007 Feb 
+22;274(1609):599–604. 
+
+
