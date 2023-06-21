@@ -56,7 +56,8 @@ for (i in seq_along(sims)){
 par(mfrow=c(2, 4))
 layout(matrix(c(1, 4, 2, 5, 3, 6, 0, 7), ncol = 4, nrow = 2))
 for (i in seq_along(sims)){
-  matplot(all_inc[[i]], type = "l", ylab = "Simulated Incidence")
+  matplot(all_inc[[i]], type = "l", ylab = "Simulated Incidence", cex.lab = 1.5,
+          col = alpha("black", 0.25), lty = 1)
 }
 dev.off()
 

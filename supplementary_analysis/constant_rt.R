@@ -2,7 +2,7 @@
 
 # Packages required
 packages <- c("EpiEstim", "dplyr", "tidyr", "ggplot2",
-              "hrbrthemes", "cowplot", "gdata")
+              "hrbrthemes", "cowplot", "gdata", "scales")
 
 # Install packages not yet installed
 installed_packages <- packages %in% rownames(installed.packages())
@@ -53,7 +53,8 @@ for (i in seq_along(sims)){
 # Visualise simulated incidence (100 epidemic trajectories for each)
 par(mfrow=c(1, n_results))
 for (i in seq_along(sims)){
-  matplot(all_inc[[i]], type = "l", ylab = "Simulated Incidence")
+  matplot(all_inc[[i]], type = "l", ylab = "Simulated Incidence", cex.lab = 1.5,
+          col = alpha("black", 0.25), lty = 1)
 }
 dev.off()
 
