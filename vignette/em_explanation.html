@@ -412,10 +412,41 @@ reconstructed.</p>
 <p>First, R<sub>w</sub> is translated into a growth rate for that week
 (r<sub>w</sub>) using Wallinga and Lipsitch’s method<sup>1</sup>. This
 is implemented using a function called <code>get_r_from_R()</code>:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>Mean_R <span class="ot">&lt;-</span> result_R_w<span class="sc">$</span>R<span class="sc">$</span><span class="st">`</span><span class="at">Mean(R)</span><span class="st">`</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>gr <span class="ot">&lt;-</span> <span class="fu">get_r_from_R</span>(<span class="at">R =</span> Mean_R,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>                   <span class="at">gt_mean =</span> mean_si,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>                   <span class="at">gt_sd =</span> sd_si)</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>get_r_from_R <span class="ot">&lt;-</span> <span class="cf">function</span>(R,</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>                         gt_mean,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>                         gt_sd,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>                         <span class="at">gt_distr =</span> <span class="cn">NULL</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>                         <span class="at">grid =</span> <span class="fu">list</span>(<span class="at">precision =</span> <span class="fl">0.001</span>, <span class="at">min =</span> <span class="sc">-</span><span class="dv">1</span>, <span class="at">max =</span> <span class="dv">1</span>)) {</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>        r_grid <span class="ot">&lt;-</span> <span class="fu">seq</span>(grid<span class="sc">$</span>min, grid<span class="sc">$</span>max, grid<span class="sc">$</span>precision)</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">is.null</span>(gt_distr)) {</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>          gt_pars <span class="ot">&lt;-</span> epitrix<span class="sc">::</span><span class="fu">gamma_mucv2shapescale</span>(<span class="at">mu =</span> gt_mean, </span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>                                                    <span class="at">cv =</span> gt_sd <span class="sc">/</span> gt_mean)</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>          gt_distr <span class="ot">&lt;-</span> distcrete<span class="sc">::</span><span class="fu">distcrete</span>(<span class="st">&quot;gamma&quot;</span>, <span class="at">interval =</span> <span class="dv">1</span>,</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>                                           <span class="at">shape =</span> gt_pars<span class="sc">$</span>shape,</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>                                           <span class="at">scale =</span> gt_pars<span class="sc">$</span>scale, <span class="at">w =</span> <span class="fl">0.5</span>)</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>        <span class="co"># using a grid of r values translate that into R using r2R0</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>        R_grid <span class="ot">&lt;-</span> epitrix<span class="sc">::</span><span class="fu">r2R0</span>(<span class="at">r =</span> r_grid, <span class="at">w =</span> gt_distr)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>        <span class="co"># find location of the value in the R grid which has the smallest </span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>        <span class="co"># difference to the input of R the user provided e.g. R_grid[idx_r]:</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>        idx_r <span class="ot">&lt;-</span> <span class="fu">vapply</span>(R, <span class="cf">function</span>(e) <span class="fu">which.min</span>(<span class="fu">abs</span>(R_grid <span class="sc">-</span> e)), <span class="fu">numeric</span>(1L)) </span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>        <span class="cf">while</span> (<span class="fu">any</span>(idx_r <span class="sc">==</span> <span class="dv">1</span>) <span class="sc">||</span> <span class="fu">any</span>(idx_r <span class="sc">==</span> <span class="fu">length</span>(r_grid))) {</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>          <span class="co"># if necessary rerun get_r_from_R with a wider r_grid</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>          grid_multiplier <span class="ot">&lt;-</span> <span class="dv">5</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>          <span class="cf">if</span> (grid<span class="sc">$</span>max <span class="sc">&gt;</span> <span class="dv">0</span>) grid<span class="sc">$</span>max <span class="ot">&lt;-</span> grid_multiplier <span class="sc">*</span> grid<span class="sc">$</span>max <span class="cf">else</span> </span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>            grid<span class="sc">$</span>max <span class="ot">&lt;-</span> <span class="sc">-</span> grid<span class="sc">$</span>max</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>          <span class="cf">if</span> (grid<span class="sc">$</span>min <span class="sc">&lt;</span> <span class="dv">0</span>) grid<span class="sc">$</span>min <span class="ot">&lt;-</span> grid_multiplier <span class="sc">*</span> grid<span class="sc">$</span>min <span class="cf">else</span> </span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>            grid<span class="sc">$</span>min <span class="ot">&lt;-</span> <span class="sc">-</span> grid<span class="sc">$</span>min</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>          r_grid <span class="ot">&lt;-</span> <span class="fu">seq</span>(grid<span class="sc">$</span>min, grid<span class="sc">$</span>max, grid<span class="sc">$</span>precision)</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>          R_grid <span class="ot">&lt;-</span> <span class="fu">r2R0</span>(<span class="at">r =</span> r_grid, <span class="at">w =</span> gt_distr)</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>          idx_r <span class="ot">&lt;-</span> <span class="fu">vapply</span>(R, <span class="cf">function</span>(e) <span class="fu">which.min</span>(<span class="fu">abs</span>(R_grid <span class="sc">-</span> e)), <span class="fu">numeric</span>(1L))</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>        r <span class="ot">&lt;-</span> <span class="fu">vapply</span>(idx_r, <span class="cf">function</span>(e) r_grid[e], <span class="fu">numeric</span>(1L))</span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>      }</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>Mean_R <span class="ot">&lt;-</span> result_R_w<span class="sc">$</span>R<span class="sc">$</span><span class="st">`</span><span class="at">Mean(R)</span><span class="st">`</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>gr <span class="ot">&lt;-</span> <span class="fu">get_r_from_R</span>(<span class="at">R =</span> Mean_R,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>                   <span class="at">gt_mean =</span> mean_si,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>                   <span class="at">gt_sd =</span> sd_si)</span></code></pre></div>
 <p>The incidence for each week is then computed assuming exponential
 growth, with a multiplying constant k<sub>w</sub> that ensures that, if
 incidence were to be reaggregated, the reconstructed incidence will
@@ -435,105 +466,105 @@ Here, we will assume that the user chose option 2 (which would be
 specified in EpiEstim using <code>recon_opt = &quot;match&quot;</code> in
 <code>estimate_R()</code>).</p></li>
 </ol>
-<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: this is all encoded within estimate_R_agg(), which is called by estimate_R()</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Matrix for the reconstructed incidence generated after each iteration</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>sim_inc <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="at">nrow =</span> T, <span class="at">ncol =</span> iter)</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Identify which aggregation windows R could be estimated for</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co"># (in this case all but the first)</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a> <span class="cf">if</span> (<span class="fu">anyNA</span>(Mean_R)){</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>   idx_na <span class="ot">&lt;-</span> <span class="fu">which</span>(<span class="fu">is.na</span>(Mean_R))</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>   idx_reconstruct <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fu">min</span>(result_R_w<span class="sc">$</span>R<span class="sc">$</span>t_start[<span class="sc">-</span>idx_na]), <span class="fu">length</span>(dis_inc))</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>   Mean_R <span class="ot">&lt;-</span> Mean_R[<span class="sc">!</span><span class="fu">is.na</span>(Mean_R)]</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>   } <span class="cf">else</span> {</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>     idx_reconstruct <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fu">min</span>(result_R_w<span class="sc">$</span>R<span class="sc">$</span>t_start), <span class="fu">length</span>(dis_inc))</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>   }</span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Index for aggregation windows</span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>full_dt <span class="ot">&lt;-</span> <span class="fu">rep</span>(dt, n_dt)</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>idx_aggregation <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fu">seq</span>(<span class="dv">1</span> <span class="sc">:</span> n_dt), <span class="at">times =</span> full_dt)</span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="co"># If recon_opt = &quot;match&quot; in estimate_R()</span></span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>aggs_with_estimate <span class="ot">&lt;-</span> <span class="fu">seq</span>(idx_aggregation[idx_reconstruct[<span class="dv">1</span>]], n_dt)</span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>aggs_to_reconstruct <span class="ot">&lt;-</span> <span class="fu">c</span>(aggs_with_estimate[<span class="dv">1</span>] <span class="sc">-</span> <span class="dv">1</span>, aggs_with_estimate)</span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>add_idx <span class="ot">&lt;-</span> <span class="fu">rev</span>((<span class="fu">min</span>(idx_reconstruct) <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">:</span> (<span class="fu">min</span>(idx_reconstruct) <span class="sc">-</span> dt))</span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>idx_reconstruct <span class="ot">&lt;-</span> <span class="fu">c</span>(add_idx, idx_reconstruct)</span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="co"># assuming growth rate in first week matches the first estimation window</span></span>
-<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>gr <span class="ot">&lt;-</span> <span class="fu">c</span>(gr[<span class="dv">1</span>], gr)</span>
-<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a><span class="co"># Aggregated incidence that can be reconstructed (in this case all incidence)</span></span>
-<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>incid_to_reconstruct <span class="ot">&lt;-</span> weekly_inc[aggs_to_reconstruct]</span>
-<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>dt_seq <span class="ot">&lt;-</span> full_dt[aggs_to_reconstruct]</span>
-<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a><span class="co"># Constant kw ensures that, if re-aggregated, totals match original aggregations</span></span>
-<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(aggs_to_reconstruct))</span>
-<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>k <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(aggs_to_reconstruct))</span>
-<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (w <span class="cf">in</span> <span class="fu">seq_along</span>(k)){</span>
-<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>  d[w] <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">exp</span>(gr[w] <span class="sc">*</span> <span class="fu">seq</span>(<span class="dv">1</span>, dt_seq[w] <span class="sc">-</span> <span class="dv">1</span>, <span class="dv">1</span>)))</span>
-<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>  k[w] <span class="ot">&lt;-</span> incid_to_reconstruct[w] <span class="sc">/</span> (<span class="fu">exp</span>(gr[w]) <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">+</span> d[w]))</span>
-<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>recon_df <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">k =</span> k, <span class="at">gr =</span> gr, <span class="at">dt =</span> dt_seq)</span>
-<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a><span class="co"># Create sequences of k and gr matching the length of each dt</span></span>
-<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>k_ls <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
-<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>gr_ls <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
-<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (f <span class="cf">in</span> <span class="fu">seq_along</span>(incid_to_reconstruct)){</span>
-<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>  k_ls[[f]] <span class="ot">&lt;-</span> <span class="fu">rep</span>(recon_df<span class="sc">$</span>k[f], recon_df<span class="sc">$</span>dt[f])</span>
-<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a>  gr_ls[[f]] <span class="ot">&lt;-</span> <span class="fu">rep</span>(recon_df<span class="sc">$</span>gr[f], recon_df<span class="sc">$</span>dt[f])</span>
-<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a>k_seq <span class="ot">&lt;-</span> <span class="fu">unlist</span>(k_ls)</span>
-<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a>gr_seq <span class="ot">&lt;-</span> <span class="fu">unlist</span>(gr_ls)</span>
-<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a><span class="co"># Create aggregation day index</span></span>
-<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a>w_day <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
-<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (x <span class="cf">in</span> <span class="fu">seq_along</span>(dt_seq)){</span>
-<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a>  w_day[[x]] <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">1</span>, dt_seq[x])</span>
-<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a>w_day <span class="ot">&lt;-</span> <span class="fu">unlist</span>(w_day)</span>
-<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a><span class="co"># Reconstruct daily incidence</span></span>
-<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a>recon_days <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">1</span>, <span class="fu">sum</span>(dt_seq))</span>
-<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a>est_inc <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA</span>, <span class="fu">length</span>(recon_days))</span>
-<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_along</span>(recon_days)){</span>
-<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a>  est_inc[t] <span class="ot">&lt;-</span> k_seq[t] <span class="sc">*</span> <span class="fu">exp</span>(gr_seq[t] <span class="sc">*</span> w_day[t])</span>
-<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-67"><a href="#cb5-67" aria-hidden="true" tabindex="-1"></a>sim_inc[,<span class="dv">1</span>] <span class="ot">&lt;-</span> est_inc</span>
-<span id="cb5-68"><a href="#cb5-68" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">&quot;Reconstructed incidence for iteration: &quot;</span>, <span class="dv">1</span>)</span>
-<span id="cb5-69"><a href="#cb5-69" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Reconstructed incidence for iteration: 1</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: this is all encoded within estimate_R_agg(), which is called by estimate_R()</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Matrix for the reconstructed incidence generated after each iteration</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>sim_inc <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="at">nrow =</span> T, <span class="at">ncol =</span> iter)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Identify which aggregation windows R could be estimated for</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="co"># (in this case all but the first)</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a> <span class="cf">if</span> (<span class="fu">anyNA</span>(Mean_R)){</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>   idx_na <span class="ot">&lt;-</span> <span class="fu">which</span>(<span class="fu">is.na</span>(Mean_R))</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>   idx_reconstruct <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fu">min</span>(result_R_w<span class="sc">$</span>R<span class="sc">$</span>t_start[<span class="sc">-</span>idx_na]), <span class="fu">length</span>(dis_inc))</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>   Mean_R <span class="ot">&lt;-</span> Mean_R[<span class="sc">!</span><span class="fu">is.na</span>(Mean_R)]</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>   } <span class="cf">else</span> {</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>     idx_reconstruct <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fu">min</span>(result_R_w<span class="sc">$</span>R<span class="sc">$</span>t_start), <span class="fu">length</span>(dis_inc))</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>   }</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Index for aggregation windows</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>full_dt <span class="ot">&lt;-</span> <span class="fu">rep</span>(dt, n_dt)</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>idx_aggregation <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fu">seq</span>(<span class="dv">1</span> <span class="sc">:</span> n_dt), <span class="at">times =</span> full_dt)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="co"># If recon_opt = &quot;match&quot; in estimate_R()</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>aggs_with_estimate <span class="ot">&lt;-</span> <span class="fu">seq</span>(idx_aggregation[idx_reconstruct[<span class="dv">1</span>]], n_dt)</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>aggs_to_reconstruct <span class="ot">&lt;-</span> <span class="fu">c</span>(aggs_with_estimate[<span class="dv">1</span>] <span class="sc">-</span> <span class="dv">1</span>, aggs_with_estimate)</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>add_idx <span class="ot">&lt;-</span> <span class="fu">rev</span>((<span class="fu">min</span>(idx_reconstruct) <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">:</span> (<span class="fu">min</span>(idx_reconstruct) <span class="sc">-</span> dt))</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>idx_reconstruct <span class="ot">&lt;-</span> <span class="fu">c</span>(add_idx, idx_reconstruct)</span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="co"># assuming growth rate in first week matches the first estimation window</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>gr <span class="ot">&lt;-</span> <span class="fu">c</span>(gr[<span class="dv">1</span>], gr)</span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a><span class="co"># Aggregated incidence that can be reconstructed (in this case all incidence)</span></span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>incid_to_reconstruct <span class="ot">&lt;-</span> weekly_inc[aggs_to_reconstruct]</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>dt_seq <span class="ot">&lt;-</span> full_dt[aggs_to_reconstruct]</span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a><span class="co"># Constant kw ensures that, if re-aggregated, totals match original aggregations</span></span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(aggs_to_reconstruct))</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>k <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(aggs_to_reconstruct))</span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (w <span class="cf">in</span> <span class="fu">seq_along</span>(k)){</span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>  d[w] <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">exp</span>(gr[w] <span class="sc">*</span> <span class="fu">seq</span>(<span class="dv">1</span>, dt_seq[w] <span class="sc">-</span> <span class="dv">1</span>, <span class="dv">1</span>)))</span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>  k[w] <span class="ot">&lt;-</span> incid_to_reconstruct[w] <span class="sc">/</span> (<span class="fu">exp</span>(gr[w]) <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">+</span> d[w]))</span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>recon_df <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">k =</span> k, <span class="at">gr =</span> gr, <span class="at">dt =</span> dt_seq)</span>
+<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a><span class="co"># Create sequences of k and gr matching the length of each dt</span></span>
+<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a>k_ls <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>gr_ls <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (f <span class="cf">in</span> <span class="fu">seq_along</span>(incid_to_reconstruct)){</span>
+<span id="cb6-46"><a href="#cb6-46" aria-hidden="true" tabindex="-1"></a>  k_ls[[f]] <span class="ot">&lt;-</span> <span class="fu">rep</span>(recon_df<span class="sc">$</span>k[f], recon_df<span class="sc">$</span>dt[f])</span>
+<span id="cb6-47"><a href="#cb6-47" aria-hidden="true" tabindex="-1"></a>  gr_ls[[f]] <span class="ot">&lt;-</span> <span class="fu">rep</span>(recon_df<span class="sc">$</span>gr[f], recon_df<span class="sc">$</span>dt[f])</span>
+<span id="cb6-48"><a href="#cb6-48" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-49"><a href="#cb6-49" aria-hidden="true" tabindex="-1"></a>k_seq <span class="ot">&lt;-</span> <span class="fu">unlist</span>(k_ls)</span>
+<span id="cb6-50"><a href="#cb6-50" aria-hidden="true" tabindex="-1"></a>gr_seq <span class="ot">&lt;-</span> <span class="fu">unlist</span>(gr_ls)</span>
+<span id="cb6-51"><a href="#cb6-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-52"><a href="#cb6-52" aria-hidden="true" tabindex="-1"></a><span class="co"># Create aggregation day index</span></span>
+<span id="cb6-53"><a href="#cb6-53" aria-hidden="true" tabindex="-1"></a>w_day <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb6-54"><a href="#cb6-54" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (x <span class="cf">in</span> <span class="fu">seq_along</span>(dt_seq)){</span>
+<span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a>  w_day[[x]] <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">1</span>, dt_seq[x])</span>
+<span id="cb6-56"><a href="#cb6-56" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-57"><a href="#cb6-57" aria-hidden="true" tabindex="-1"></a>w_day <span class="ot">&lt;-</span> <span class="fu">unlist</span>(w_day)</span>
+<span id="cb6-58"><a href="#cb6-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-59"><a href="#cb6-59" aria-hidden="true" tabindex="-1"></a><span class="co"># Reconstruct daily incidence</span></span>
+<span id="cb6-60"><a href="#cb6-60" aria-hidden="true" tabindex="-1"></a>recon_days <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">1</span>, <span class="fu">sum</span>(dt_seq))</span>
+<span id="cb6-61"><a href="#cb6-61" aria-hidden="true" tabindex="-1"></a>est_inc <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA</span>, <span class="fu">length</span>(recon_days))</span>
+<span id="cb6-62"><a href="#cb6-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-63"><a href="#cb6-63" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_along</span>(recon_days)){</span>
+<span id="cb6-64"><a href="#cb6-64" aria-hidden="true" tabindex="-1"></a>  est_inc[t] <span class="ot">&lt;-</span> k_seq[t] <span class="sc">*</span> <span class="fu">exp</span>(gr_seq[t] <span class="sc">*</span> w_day[t])</span>
+<span id="cb6-65"><a href="#cb6-65" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-66"><a href="#cb6-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-67"><a href="#cb6-67" aria-hidden="true" tabindex="-1"></a>sim_inc[,<span class="dv">1</span>] <span class="ot">&lt;-</span> est_inc</span>
+<span id="cb6-68"><a href="#cb6-68" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">&quot;Reconstructed incidence for iteration: &quot;</span>, <span class="dv">1</span>)</span>
+<span id="cb6-69"><a href="#cb6-69" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Reconstructed incidence for iteration: 1</span></span></code></pre></div>
 <p>The process is repeated iteratively, where each iteration starts with
 the new reconstructed incidence generated in the previous iteration:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>new_inc <span class="ot">&lt;-</span> sim_inc[,<span class="dv">1</span>]</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Re-estimate R for each aggregation window using this new incidence</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>R <span class="ot">&lt;-</span> <span class="fu">estimate_R</span>(new_inc,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>                <span class="at">method =</span> method,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>                <span class="at">config =</span> <span class="fu">list</span>(<span class="at">mean_si =</span> mean_si,</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>                              <span class="at">std_si =</span> sd_si,</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>                              <span class="at">t_start =</span> t_start,</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>                              <span class="at">t_end =</span> t_end))</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="co"># And the process repeats exactly as above until convergence</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>new_inc <span class="ot">&lt;-</span> sim_inc[,<span class="dv">1</span>]</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Re-estimate R for each aggregation window using this new incidence</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>R <span class="ot">&lt;-</span> <span class="fu">estimate_R</span>(new_inc,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>                <span class="at">method =</span> method,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>                <span class="at">config =</span> <span class="fu">list</span>(<span class="at">mean_si =</span> mean_si,</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>                              <span class="at">std_si =</span> sd_si,</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>                              <span class="at">t_start =</span> t_start,</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>                              <span class="at">t_end =</span> t_end))</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="co"># And the process repeats exactly as above until convergence</span></span></code></pre></div>
 <p>After 10 iterations, the matrix of reconstructed incidence is
 complete:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(sim_inc)</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          [,1]     [,2]     [,3]     [,4]     [,5]     [,6]     [,7]     [,8]</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1,] 12.00107 11.84695 11.80862 11.80862 11.80862 11.80862 11.80862 11.80862</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [2,] 12.69231 12.57953 12.55137 12.55137 12.55137 12.55137 12.55137 12.55137</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [3,] 13.42336 13.35740 13.34083 13.34083 13.34083 13.34083 13.34083 13.34083</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [4,] 14.19651 14.18338 14.17996 14.17996 14.17996 14.17996 14.17996 14.17996</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [5,] 15.01420 15.06043 15.07186 15.07186 15.07186 15.07186 15.07186 15.07186</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [6,] 15.87898 15.99172 16.01987 16.01987 16.01987 16.01987 16.01987 16.01987</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          [,9]    [,10]</span></span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1,] 11.80862 11.80862</span></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [2,] 12.55137 12.55137</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [3,] 13.34083 13.34083</span></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [4,] 14.17996 14.17996</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [5,] 15.07186 15.07186</span></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [6,] 16.01987 16.01987</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(sim_inc)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          [,1]     [,2]     [,3]     [,4]     [,5]     [,6]     [,7]     [,8]</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1,] 12.00107 11.84695 11.80862 11.80862 11.80862 11.80862 11.80862 11.80862</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [2,] 12.69231 12.57953 12.55137 12.55137 12.55137 12.55137 12.55137 12.55137</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [3,] 13.42336 13.35740 13.34083 13.34083 13.34083 13.34083 13.34083 13.34083</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [4,] 14.19651 14.18338 14.17996 14.17996 14.17996 14.17996 14.17996 14.17996</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [5,] 15.01420 15.06043 15.07186 15.07186 15.07186 15.07186 15.07186 15.07186</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [6,] 15.87898 15.99172 16.01987 16.01987 16.01987 16.01987 16.01987 16.01987</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          [,9]    [,10]</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1,] 11.80862 11.80862</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [2,] 12.55137 12.55137</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [3,] 13.34083 13.34083</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [4,] 14.17996 14.17996</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [5,] 15.07186 15.07186</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [6,] 16.01987 16.01987</span></span></code></pre></div>
 <p>A convergence check ensures that the incidence generated in the final
 iteration does not differ from the previous iteration beyond a tolerance
 of 10<sup>-6</sup>.</p>

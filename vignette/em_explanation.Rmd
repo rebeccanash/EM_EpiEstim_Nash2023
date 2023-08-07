@@ -134,7 +134,7 @@ First, R~w~ is translated into a growth rate for that week (r~w~) using
 Wallinga and Lipsitch's method^1^. This is implemented using a function called
 `get_r_from_R()`:
 
-```{r, echo = F}
+```{r}
 get_r_from_R <- function(R,
                          gt_mean,
                          gt_sd,
